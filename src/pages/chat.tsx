@@ -4,10 +4,14 @@ import { useState, useRef, useEffect } from 'react'
 import { JOBS } from '@/data/jobs'
 import { MENTORS } from '@/data/mentors'
 import { INTENT_OPTIONS, Intent } from '@/types/intent'
+import { POPULAR_QUESTIONS } from '@/data/popularQuestions'
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  suggestions?: string[]
 }
 
 const INTENT_GREETINGS: Record<Intent, (mentorName: string, jobTitle: string) => string> = {
@@ -23,7 +27,9 @@ export default function ChatPage() {
   const job = JOBS.find((j) => j.id === jobId)
   const mentor = MENTORS.find((m) => m.id === mentorId)
   const intentOption = INTENT_OPTIONS.find((i) => i.id === intent)
+  const popularQuestions = POPULAR_QUESTIONS[(intent as Intent) ?? 'jd']
 
+  const [sessionId] = useState(() => crypto.randomUUID())
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -40,26 +46,48 @@ export default function ChatPage() {
     }
   }, [mentor?.id, job?.id, intent])
 
-  const handleSend = async () => {
-    const text = input.trim()
-    if (!text || loading) return
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || loading) return
 
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setLoading(true)
 
-    // TODO: 실제 API 연결
-    await new Promise((r) => setTimeout(r, 800))
-    setMessages((prev) => [...prev, { role: 'assistant', content: '응답없음' }])
-    setLoading(false)
+    try {
+      const res = await fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          mentor_id: mentorId,
+          job_id: jobId ?? '',
+          intent: intent ?? 'story',
+          message: text,
+        }),
+      })
+      const data = await res.json()
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: data.reply, suggestions: data.suggestions ?? [] },
+      ])
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.' },
+      ])
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      sendMessage(input)
     }
   }
+
+  const hasUserMessage = messages.some((m) => m.role === 'user')
 
   if (!job || !mentor || !intentOption) {
     return (
@@ -85,7 +113,6 @@ export default function ChatPage() {
             >
               ←
             </button>
-
             <div className="flex items-center gap-3 flex-1">
               <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl">
                 {mentor.emoji}
@@ -95,8 +122,6 @@ export default function ChatPage() {
                 <p className="text-xs text-gray-400">{mentor.role}</p>
               </div>
             </div>
-
-            {/* 질문 유형 배지 */}
             <span className="text-xs bg-red-50 text-kt-red border border-red-100 px-3 py-1 rounded-full font-medium">
               {intentOption.emoji} {intentOption.label}
             </span>
@@ -106,28 +131,45 @@ export default function ChatPage() {
         {/* 메시지 목록 */}
         <div className="flex-1 overflow-y-auto py-6">
           <div className="max-w-2xl mx-auto px-6 flex flex-col gap-4">
+
             {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-3`}
-              >
-                {msg.role === 'assistant' && (
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
-                    {mentor.emoji}
+              <div key={i} className="flex flex-col gap-2">
+                <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-3`}>
+                  {msg.role === 'assistant' && (
+                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
+                      {mentor.emoji}
+                    </div>
+                  )}
+                  <div
+                    className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-kt-red text-white rounded-br-sm'
+                        : 'bg-white text-gray-800 border border-gray-100 rounded-bl-sm'
+                    }`}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
+
+                {/* 후속 질문 추천 칩 */}
+                {msg.role === 'assistant' && msg.suggestions && msg.suggestions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 ml-11">
+                    {msg.suggestions.map((s, j) => (
+                      <button
+                        key={j}
+                        onClick={() => sendMessage(s)}
+                        disabled={loading}
+                        className="text-xs bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-full hover:border-kt-red hover:text-kt-red transition-colors disabled:opacity-50"
+                      >
+                        {s}
+                      </button>
+                    ))}
                   </div>
                 )}
-                <div
-                  className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
-                    msg.role === 'user'
-                      ? 'bg-kt-red text-white rounded-br-sm'
-                      : 'bg-white text-gray-800 border border-gray-100 rounded-bl-sm'
-                  }`}
-                >
-                  {msg.content}
-                </div>
               </div>
             ))}
 
+            {/* 로딩 */}
             {loading && (
               <div className="flex justify-start gap-3">
                 <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
@@ -145,6 +187,26 @@ export default function ChatPage() {
           </div>
         </div>
 
+        {/* 인기 질문 칩 - 첫 메시지 전에만 표시 */}
+        {!hasUserMessage && popularQuestions && (
+          <div className="bg-white border-t border-gray-100 flex-shrink-0">
+            <div className="max-w-2xl mx-auto px-6 py-3">
+              <p className="text-xs text-gray-400 mb-2">💬 자주 묻는 질문</p>
+              <div className="flex flex-wrap gap-2">
+                {popularQuestions.map((q, i) => (
+                  <button
+                    key={i}
+                    onClick={() => sendMessage(q)}
+                    className="text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-full hover:border-kt-red hover:text-kt-red transition-colors"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 입력창 */}
         <div className="bg-white border-t border-gray-200 flex-shrink-0">
           <div className="max-w-2xl mx-auto px-6 py-3 flex gap-3 items-end">
@@ -158,7 +220,7 @@ export default function ChatPage() {
               style={{ overflowY: 'auto' }}
             />
             <button
-              onClick={handleSend}
+              onClick={() => sendMessage(input)}
               disabled={!input.trim() || loading}
               className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
                 input.trim() && !loading
