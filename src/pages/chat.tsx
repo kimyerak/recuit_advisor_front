@@ -18,9 +18,9 @@ interface Message {
 const INTRO_MESSAGES: Record<string, (name: string, job: string) => string> = {
   kim_taeuk: (name, job) =>
     `안녕! 나 ${name}이야 😄\n${job} 직무 지원하는 거지?\n\n오늘 뭐가 궁금해?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 실무 얘기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
-  park_mentor: (name, job) =>
+  song_junho: (name, job) =>
     `안녕하세요! ${name}이에요 😊\n${job} 지원을 준비 중이시군요!\n\n어떤 부분을 도와드릴까요?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 커리어 얘기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
-  lee_frontier: (name, job) =>
+  kim_yerak: (name, job) =>
     `안녕하세요~ ${name}이에요! 🚀\n${job} 지원 준비 중이시죠?\n\n오늘 어떤 도움이 필요하세요?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 이야기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
 }
 
@@ -51,7 +51,7 @@ export default function ChatPage() {
   // 첫 인트로 메시지
   useEffect(() => {
     if (mentor && job) {
-      const introFn = INTRO_MESSAGES[mentor.id] ?? INTRO_MESSAGES['park_mentor']
+      const introFn = INTRO_MESSAGES[mentor.id] ?? INTRO_MESSAGES['song_junho']
       setMessages([{
         role: 'assistant',
         content: introFn(mentor.name, job.title),
