@@ -12,24 +12,33 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   suggestions?: string[]
+  isIntentSelect?: boolean   // 첫 인트로 메시지 여부
 }
 
-const INTENT_GREETINGS: Record<Intent, (mentorName: string, jobTitle: string) => string> = {
-  jd: (name, job) => `안녕하세요! ${name}이에요.\n${job} 채용공고에 대해 궁금한 거 뭐든 물어보세요!`,
-  story: (name, job) => `안녕! 나 ${name}이야.\n${job} 직무 실무 경험이나 커리어 얘기 편하게 물어봐!`,
-  resume: (name, job) => `안녕하세요! ${name}이에요.\n${job} 지원 자소서, KT 합격 선배들 예시 기반으로 같이 다듬어볼게요!`,
+const INTRO_MESSAGES: Record<string, (name: string, job: string) => string> = {
+  kim_taeuk: (name, job) =>
+    `안녕! 나 ${name}이야 😄\n${job} 직무 지원하는 거지?\n\n오늘 뭐가 궁금해?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 실무 얘기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
+  park_mentor: (name, job) =>
+    `안녕하세요! ${name}이에요 😊\n${job} 지원을 준비 중이시군요!\n\n어떤 부분을 도와드릴까요?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 커리어 얘기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
+  lee_frontier: (name, job) =>
+    `안녕하세요~ ${name}이에요! 🚀\n${job} 지원 준비 중이시죠?\n\n오늘 어떤 도움이 필요하세요?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 이야기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
+}
+
+const INTENT_REPLIES: Record<Intent, (name: string) => string> = {
+  jd: (name) => `채용공고 관련 질문이군요!\n${name}이 꼼꼼하게 알려드릴게요. 궁금한 거 뭐든 물어보세요 😊`,
+  story: (name) => `실무 이야기 궁금하구나!\n${name}의 경험 솔직하게 얘기해줄게. 편하게 물어봐!`,
+  resume: (name) => `자소서 같이 봐드릴게요!\n${name}이 KT 합격 전략 기반으로 조언해드릴게요. 어떤 항목부터 시작할까요?`,
 }
 
 export default function ChatPage() {
   const router = useRouter()
-  const { jobId, mentorId, intent } = router.query
+  const { jobId, mentorId } = router.query
 
   const job = JOBS.find((j) => j.id === jobId)
   const mentor = MENTORS.find((m) => m.id === mentorId)
-  const intentOption = INTENT_OPTIONS.find((i) => i.id === intent)
-  const popularQuestions = POPULAR_QUESTIONS[(intent as Intent) ?? 'jd']
 
   const [sessionId] = useState(() => crypto.randomUUID())
+  const [intent, setIntent] = useState<Intent | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -39,15 +48,33 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
+  // 첫 인트로 메시지
   useEffect(() => {
-    if (mentor && job && intent) {
-      const greeting = INTENT_GREETINGS[intent as Intent]?.(mentor.name, job.title)
-      if (greeting) setMessages([{ role: 'assistant', content: greeting }])
+    if (mentor && job) {
+      const introFn = INTRO_MESSAGES[mentor.id] ?? INTRO_MESSAGES['park_mentor']
+      setMessages([{
+        role: 'assistant',
+        content: introFn(mentor.name, job.title),
+        isIntentSelect: true,
+      }])
     }
-  }, [mentor?.id, job?.id, intent])
+  }, [mentor?.id, job?.id])
+
+  // intent 선택 처리
+  const handleSelectIntent = (selected: Intent) => {
+    const option = INTENT_OPTIONS.find((o) => o.id === selected)!
+    const replyFn = INTENT_REPLIES[selected]
+
+    setIntent(selected)
+    setMessages((prev) => [
+      ...prev.map((m) => ({ ...m, isIntentSelect: false })), // 버튼 숨기기
+      { role: 'user', content: `${option.emoji} ${option.label}` },
+      { role: 'assistant', content: replyFn(mentor!.name) },
+    ])
+  }
 
   const sendMessage = async (text: string) => {
-    if (!text.trim() || loading) return
+    if (!text.trim() || loading || !intent) return
 
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
@@ -61,7 +88,7 @@ export default function ChatPage() {
           session_id: sessionId,
           mentor_id: mentorId,
           job_id: jobId ?? '',
-          intent: intent ?? 'story',
+          intent,
           message: text,
         }),
       })
@@ -87,9 +114,10 @@ export default function ChatPage() {
     }
   }
 
+  const popularQuestions = intent ? POPULAR_QUESTIONS[intent] : []
   const hasUserMessage = messages.some((m) => m.role === 'user')
 
-  if (!job || !mentor || !intentOption) {
+  if (!job || !mentor) {
     return (
       <div className="min-h-screen bg-kt-gray flex items-center justify-center">
         <p className="text-gray-400">잘못된 접근입니다.</p>
@@ -122,16 +150,18 @@ export default function ChatPage() {
                 <p className="text-xs text-gray-400">{mentor.role}</p>
               </div>
             </div>
-            <span className="text-xs bg-red-50 text-kt-red border border-red-100 px-3 py-1 rounded-full font-medium">
-              {intentOption.emoji} {intentOption.label}
-            </span>
+            {intent && (
+              <span className="text-xs bg-red-50 text-kt-red border border-red-100 px-3 py-1 rounded-full font-medium">
+                {INTENT_OPTIONS.find((o) => o.id === intent)?.emoji}{' '}
+                {INTENT_OPTIONS.find((o) => o.id === intent)?.label}
+              </span>
+            )}
           </div>
         </header>
 
         {/* 메시지 목록 */}
         <div className="flex-1 overflow-y-auto py-6">
           <div className="max-w-2xl mx-auto px-6 flex flex-col gap-4">
-
             {messages.map((msg, i) => (
               <div key={i} className="flex flex-col gap-2">
                 <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-3`}>
@@ -151,8 +181,27 @@ export default function ChatPage() {
                   </div>
                 </div>
 
+                {/* intent 선택 버튼 */}
+                {msg.isIntentSelect && (
+                  <div className="flex flex-col gap-2 ml-11">
+                    {INTENT_OPTIONS.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => handleSelectIntent(option.id)}
+                        className="flex items-center gap-3 px-4 py-3 bg-white border-2 border-gray-200 rounded-2xl text-left hover:border-kt-red hover:bg-red-50 transition-all"
+                      >
+                        <span className="text-xl">{option.emoji}</span>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{option.label}</p>
+                          <p className="text-xs text-gray-400">{option.description}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* 후속 질문 추천 칩 */}
-                {msg.role === 'assistant' && msg.suggestions && msg.suggestions.length > 0 && (
+                {msg.role === 'assistant' && !msg.isIntentSelect && msg.suggestions && msg.suggestions.length > 0 && (
                   <div className="flex flex-wrap gap-2 ml-11">
                     {msg.suggestions.map((s, j) => (
                       <button
@@ -182,13 +231,12 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
-
             <div ref={bottomRef} />
           </div>
         </div>
 
-        {/* 인기 질문 칩 - 첫 메시지 전에만 표시 */}
-        {!hasUserMessage && popularQuestions && (
+        {/* 인기 질문 칩 - intent 선택 후 & 첫 질문 전에만 */}
+        {intent && !hasUserMessage && popularQuestions.length > 0 && (
           <div className="bg-white border-t border-gray-100 flex-shrink-0">
             <div className="max-w-2xl mx-auto px-6 py-3">
               <p className="text-xs text-gray-400 mb-2">💬 자주 묻는 질문</p>
@@ -207,23 +255,24 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* 입력창 */}
+        {/* 입력창 - intent 선택 후에만 활성화 */}
         <div className="bg-white border-t border-gray-200 flex-shrink-0">
           <div className="max-w-2xl mx-auto px-6 py-3 flex gap-3 items-end">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={`${intentOption.label}에 대해 물어보세요 (Enter로 전송)`}
+              placeholder={intent ? '궁금한 거 물어보세요 (Enter로 전송)' : '위에서 주제를 먼저 선택해주세요'}
+              disabled={!intent}
               rows={1}
-              className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:border-kt-red transition-colors max-h-32"
+              className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:border-kt-red transition-colors max-h-32 disabled:bg-gray-50 disabled:text-gray-400"
               style={{ overflowY: 'auto' }}
             />
             <button
               onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading}
+              disabled={!input.trim() || loading || !intent}
               className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
-                input.trim() && !loading
+                input.trim() && !loading && intent
                   ? 'bg-kt-red text-white hover:bg-red-700'
                   : 'bg-gray-200 text-gray-400 cursor-not-allowed'
               }`}
