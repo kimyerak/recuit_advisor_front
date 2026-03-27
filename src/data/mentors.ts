@@ -2,7 +2,7 @@ import { Mentor } from '@/types/mentor'
 
 export const MENTORS: Mentor[] = [
   {
-    id: 'kim_seonbae',
+    id: 'kim_taeuk',
     name: '김선배',
     role: 'Cloud 이행 경력 실무자',
     career: 'KT 클라우드 인프라팀 7년차 · AWS/Azure 마이그레이션 프로젝트 다수',
