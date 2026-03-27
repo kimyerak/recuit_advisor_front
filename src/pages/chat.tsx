@@ -3,7 +3,6 @@ import Head from 'next/head'
 import { useState, useRef, useEffect } from 'react'
 import { JOBS } from '@/data/jobs'
 import { MENTORS } from '@/data/mentors'
-import { INTENT_OPTIONS, Intent } from '@/types/intent'
 import { POPULAR_QUESTIONS } from '@/data/popularQuestions'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
@@ -12,22 +11,13 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   suggestions?: string[]
-  isIntentSelect?: boolean   // 첫 인트로 메시지 여부
 }
 
-const INTRO_MESSAGES: Record<string, (name: string, job: string) => string> = {
-  kim_taeuk: (name, job) =>
-    `안녕! 나 ${name}이야 😄\n${job} 직무 지원하는 거지?\n\n오늘 뭐가 궁금해?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 실무 얘기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
-  song_junho: (name, job) =>
-    `안녕하세요! ${name}이에요 😊\n${job} 지원을 준비 중이시군요!\n\n어떤 부분을 도와드릴까요?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 커리어 얘기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
-  kim_yerak: (name, job) =>
-    `안녕하세요~ ${name}이에요! 🚀\n${job} 지원 준비 중이시죠?\n\n오늘 어떤 도움이 필요하세요?\n\n1️⃣  채용공고 내용이 궁금해요\n2️⃣  선배 이야기 듣고 싶어요\n3️⃣  자소서 같이 봐주세요`,
-}
-
-const INTENT_REPLIES: Record<Intent, (name: string) => string> = {
-  jd: (name) => `채용공고 관련 질문이군요!\n${name}이 꼼꼼하게 알려드릴게요. 궁금한 거 뭐든 물어보세요 😊`,
-  story: (name) => `실무 이야기 궁금하구나!\n${name}의 경험 솔직하게 얘기해줄게. 편하게 물어봐!`,
-  resume: (name) => `자소서 같이 봐드릴게요!\n${name}이 KT 합격 전략 기반으로 조언해드릴게요. 어떤 항목부터 시작할까요?`,
+const INTRO_MESSAGES: Record<string, (job: string) => string> = {
+  vic: (job) =>
+    `안녕! 나 빅이야 🟠\n${job} 직무 준비하러 왔구나!\n\n핵심만 바로 말해줄게. 뭐든 물어봐!`,
+  ddory: (job) =>
+    `안녕~ 나는 또리야 🔵\n${job} 직무가 궁금한 거야?\n\n같이 하나씩 알아보자! 뭐부터 궁금해? 😊`,
 }
 
 export default function ChatPage() {
@@ -38,43 +28,44 @@ export default function ChatPage() {
   const mentor = MENTORS.find((m) => m.id === mentorId)
 
   const [sessionId] = useState(() => crypto.randomUUID())
-  const [intent, setIntent] = useState<Intent | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showSurvey, setShowSurvey] = useState(false)
+  const [surveyDone, setSurveyDone] = useState(false)
+  const [satisfaction, setSatisfaction] = useState(0)
+  const [applied, setApplied] = useState<'yes' | 'no' | 'considering' | null>(null)
+  const [helpfulAspects, setHelpfulAspects] = useState<string[]>([])
+  const [freeText, setFreeText] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+
+  const toggleAspect = (aspect: string) => {
+    setHelpfulAspects((prev) =>
+      prev.includes(aspect) ? prev.filter((a) => a !== aspect) : [...prev, aspect]
+    )
+  }
+
+  const handleSurveySubmit = () => {
+    setSurveyDone(true)
+    const audio = new Audio(`${API_URL}/static/임창정 MV 16집 '소확행'.mp3`)
+    audio.play().catch(() => {})
+    setTimeout(() => router.push('/'), 15000)
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // 첫 인트로 메시지
+  // 인트로 메시지
   useEffect(() => {
     if (mentor && job) {
-      const introFn = INTRO_MESSAGES[mentor.id] ?? INTRO_MESSAGES['song_junho']
-      setMessages([{
-        role: 'assistant',
-        content: introFn(mentor.name, job.title),
-        isIntentSelect: true,
-      }])
+      const introFn = INTRO_MESSAGES[mentor.id] ?? INTRO_MESSAGES['ddory']
+      setMessages([{ role: 'assistant', content: introFn(job.title) }])
     }
   }, [mentor?.id, job?.id])
 
-  // intent 선택 처리
-  const handleSelectIntent = (selected: Intent) => {
-    const option = INTENT_OPTIONS.find((o) => o.id === selected)!
-    const replyFn = INTENT_REPLIES[selected]
-
-    setIntent(selected)
-    setMessages((prev) => [
-      ...prev.map((m) => ({ ...m, isIntentSelect: false })), // 버튼 숨기기
-      { role: 'user', content: `${option.emoji} ${option.label}` },
-      { role: 'assistant', content: replyFn(mentor!.name) },
-    ])
-  }
-
   const sendMessage = async (text: string) => {
-    if (!text.trim() || loading || !intent) return
+    if (!text.trim() || loading) return
 
     setInput('')
     setMessages((prev) => [...prev, { role: 'user', content: text }])
@@ -88,7 +79,6 @@ export default function ChatPage() {
           session_id: sessionId,
           mentor_id: mentorId,
           job_id: jobId ?? '',
-          intent,
           message: text,
         }),
       })
@@ -114,7 +104,6 @@ export default function ChatPage() {
     }
   }
 
-  const popularQuestions = intent ? POPULAR_QUESTIONS[intent] : []
   const hasUserMessage = messages.some((m) => m.role === 'user')
 
   if (!job || !mentor) {
@@ -125,37 +114,40 @@ export default function ChatPage() {
     )
   }
 
+  const avatarBg = mentor.color === 'orange' ? 'bg-orange-900/40' : 'bg-blue-900/40'
+
   return (
     <>
       <Head>
         <title>{mentor.name}와 대화 · KT 채용 어드바이저</title>
       </Head>
 
-      <div className="flex flex-col h-screen bg-kt-gray">
+      <div className="flex flex-col h-screen bg-kt-bg">
         {/* 헤더 */}
-        <header className="bg-white border-b border-gray-200 flex-shrink-0">
+        <header className="bg-kt-surface border-b border-kt-border flex-shrink-0">
           <div className="max-w-2xl mx-auto px-6 py-3 flex items-center gap-3">
             <button
               onClick={() => router.back()}
-              className="text-gray-400 hover:text-gray-700 transition-colors text-sm"
+              className="text-gray-500 hover:text-white transition-colors text-sm"
             >
-              ←
+              ← 목록
             </button>
             <div className="flex items-center gap-3 flex-1">
-              <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl">
-                {mentor.emoji}
+              <div className={`w-10 h-10 rounded-full ${avatarBg} flex items-center justify-center overflow-hidden flex-shrink-0`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mentor.image} alt={mentor.name} className="w-full h-full object-contain" />
               </div>
               <div>
-                <p className="font-bold text-gray-900 text-sm">{mentor.name}</p>
-                <p className="text-xs text-gray-400">{mentor.role}</p>
+                <p className="font-bold text-white text-sm">{mentor.name}</p>
+                <p className="text-xs text-kt-muted">{mentor.role}</p>
               </div>
             </div>
-            {intent && (
-              <span className="text-xs bg-red-50 text-kt-red border border-red-100 px-3 py-1 rounded-full font-medium">
-                {INTENT_OPTIONS.find((o) => o.id === intent)?.emoji}{' '}
-                {INTENT_OPTIONS.find((o) => o.id === intent)?.label}
-              </span>
-            )}
+            <button
+              onClick={() => setShowSurvey(true)}
+              className="text-xs text-gray-400 border border-kt-border px-3 py-1.5 rounded-lg hover:border-kt-red hover:text-kt-red transition-colors flex-shrink-0"
+            >
+              상담종료
+            </button>
           </div>
         </header>
 
@@ -166,49 +158,31 @@ export default function ChatPage() {
               <div key={i} className="flex flex-col gap-2">
                 <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-3`}>
                   {msg.role === 'assistant' && (
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
-                      {mentor.emoji}
+                    <div className={`w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center overflow-hidden flex-shrink-0 mt-1`}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mentor.image} alt={mentor.name} className="w-full h-full object-contain" />
                     </div>
                   )}
                   <div
                     className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
                       msg.role === 'user'
                         ? 'bg-kt-red text-white rounded-br-sm'
-                        : 'bg-white text-gray-800 border border-gray-100 rounded-bl-sm'
+                        : 'bg-kt-surface text-gray-100 border border-kt-border rounded-bl-sm'
                     }`}
                   >
                     {msg.content}
                   </div>
                 </div>
 
-                {/* intent 선택 버튼 */}
-                {msg.isIntentSelect && (
-                  <div className="flex flex-col gap-2 ml-11">
-                    {INTENT_OPTIONS.map((option) => (
-                      <button
-                        key={option.id}
-                        onClick={() => handleSelectIntent(option.id)}
-                        className="flex items-center gap-3 px-4 py-3 bg-white border-2 border-gray-200 rounded-2xl text-left hover:border-kt-red hover:bg-red-50 transition-all"
-                      >
-                        <span className="text-xl">{option.emoji}</span>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800">{option.label}</p>
-                          <p className="text-xs text-gray-400">{option.description}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
                 {/* 후속 질문 추천 칩 */}
-                {msg.role === 'assistant' && !msg.isIntentSelect && msg.suggestions && msg.suggestions.length > 0 && (
+                {msg.role === 'assistant' && msg.suggestions && msg.suggestions.length > 0 && (
                   <div className="flex flex-wrap gap-2 ml-11">
                     {msg.suggestions.map((s, j) => (
                       <button
                         key={j}
                         onClick={() => sendMessage(s)}
                         disabled={loading}
-                        className="text-xs bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-full hover:border-kt-red hover:text-kt-red transition-colors disabled:opacity-50"
+                        className="text-xs bg-kt-bg border border-kt-border text-gray-400 px-3 py-1.5 rounded-full hover:border-kt-red hover:text-kt-red transition-colors disabled:opacity-50"
                       >
                         {s}
                       </button>
@@ -221,13 +195,14 @@ export default function ChatPage() {
             {/* 로딩 */}
             {loading && (
               <div className="flex justify-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
-                  {mentor.emoji}
+                <div className={`w-8 h-8 rounded-full ${avatarBg} flex items-center justify-center overflow-hidden flex-shrink-0 mt-1`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={mentor.image} alt={mentor.name} className="w-full h-full object-contain" />
                 </div>
-                <div className="bg-white border border-gray-100 px-4 py-3 rounded-2xl rounded-bl-sm flex gap-1 items-center">
-                  <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce [animation-delay:0ms]" />
-                  <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce [animation-delay:150ms]" />
-                  <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce [animation-delay:300ms]" />
+                <div className="bg-kt-surface border border-kt-border px-4 py-3 rounded-2xl rounded-bl-sm flex gap-1 items-center">
+                  <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span className="w-2 h-2 bg-gray-600 rounded-full animate-bounce [animation-delay:300ms]" />
                 </div>
               </div>
             )}
@@ -235,17 +210,17 @@ export default function ChatPage() {
           </div>
         </div>
 
-        {/* 인기 질문 칩 - intent 선택 후 & 첫 질문 전에만 */}
-        {intent && !hasUserMessage && popularQuestions.length > 0 && (
-          <div className="bg-white border-t border-gray-100 flex-shrink-0">
+        {/* 자주 묻는 질문 - 첫 질문 전에만 */}
+        {!hasUserMessage && (
+          <div className="bg-kt-surface border-t border-kt-border flex-shrink-0">
             <div className="max-w-2xl mx-auto px-6 py-3">
-              <p className="text-xs text-gray-400 mb-2">💬 자주 묻는 질문</p>
+              <p className="text-xs text-kt-muted mb-2">💬 자주 묻는 질문</p>
               <div className="flex flex-wrap gap-2">
-                {popularQuestions.map((q, i) => (
+                {POPULAR_QUESTIONS.map((q, i) => (
                   <button
                     key={i}
                     onClick={() => sendMessage(q)}
-                    className="text-xs bg-gray-50 border border-gray-200 text-gray-600 px-3 py-1.5 rounded-full hover:border-kt-red hover:text-kt-red transition-colors"
+                    className="text-xs bg-kt-bg border border-kt-border text-gray-400 px-3 py-1.5 rounded-full hover:border-kt-red hover:text-kt-red transition-colors"
                   >
                     {q}
                   </button>
@@ -255,26 +230,25 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* 입력창 - intent 선택 후에만 활성화 */}
-        <div className="bg-white border-t border-gray-200 flex-shrink-0">
+        {/* 입력창 */}
+        <div className="bg-kt-surface border-t border-kt-border flex-shrink-0">
           <div className="max-w-2xl mx-auto px-6 py-3 flex gap-3 items-end">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={intent ? '궁금한 거 물어보세요 (Enter로 전송)' : '위에서 주제를 먼저 선택해주세요'}
-              disabled={!intent}
+              placeholder="궁금한 거 물어보세요 (Enter로 전송)"
               rows={1}
-              className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:border-kt-red transition-colors max-h-32 disabled:bg-gray-50 disabled:text-gray-400"
+              className="flex-1 resize-none rounded-xl border border-kt-border bg-kt-bg text-white placeholder-gray-600 px-4 py-3 text-sm focus:outline-none focus:border-kt-red transition-colors max-h-32"
               style={{ overflowY: 'auto' }}
             />
             <button
               onClick={() => sendMessage(input)}
-              disabled={!input.trim() || loading || !intent}
+              disabled={!input.trim() || loading}
               className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
-                input.trim() && !loading && intent
+                input.trim() && !loading
                   ? 'bg-kt-red text-white hover:bg-red-700'
-                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  : 'bg-kt-bg border border-kt-border text-gray-600 cursor-not-allowed'
               }`}
             >
               <svg className="w-4 h-4 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -284,6 +258,142 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* 만족도 조사 모달 */}
+      {showSurvey && (
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-50 p-4">
+          <div className="bg-kt-surface border border-kt-border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {surveyDone ? (
+              <div className="flex flex-col items-center justify-center py-12 px-8 text-center">
+                <div className="animate-pop-in">
+                  <div className={`w-36 h-36 rounded-full ${avatarBg} flex items-center justify-center overflow-hidden mb-6 animate-float`}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={mentor.image} alt={mentor.name} className="w-full h-full object-contain" />
+                  </div>
+                </div>
+                <p className="text-white font-bold text-xl mb-2">응답해주셔서 감사해요!</p>
+                <p className="text-kt-muted text-sm">{mentor.name}이(가) 응원할게요 🎉</p>
+                <div className="mt-5 bg-kt-bg border border-kt-border rounded-xl px-5 py-4 text-center">
+                  <p className="text-kt-red font-bold text-sm mb-1">🎵 KT 퇴근송 — 소확행</p>
+                  <p className="text-gray-400 text-xs leading-relaxed">
+                    이 노래는 실제 KT 직원들이 퇴근할 때 듣는 퇴근송이야!<br />
+                    오늘 하루도 수고했어. 곧 너도 이 노래 들으며 퇴근하는 날이 올 거야 😊
+                  </p>
+                </div>
+                <p className="text-kt-muted text-xs mt-4">잠시 후 메인 화면으로 이동합니다</p>
+              </div>
+            ) : (
+              <div className="p-6 flex flex-col gap-6">
+                <div>
+                  <p className="text-white font-bold text-base">상담은 어떠셨나요?</p>
+                  <p className="text-kt-muted text-xs mt-1">솔직한 답변이 큰 도움이 됩니다</p>
+                </div>
+
+                {/* 만족도 */}
+                <div>
+                  <p className="text-sm text-gray-300 font-medium mb-3">전반적인 만족도</p>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setSatisfaction(n)}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                          satisfaction >= n
+                            ? 'bg-kt-red text-white'
+                            : 'bg-kt-bg border border-kt-border text-gray-500 hover:border-kt-red'
+                        }`}
+                      >
+                        {['😞', '😐', '🙂', '😊', '🤩'][n - 1]}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex justify-between mt-1.5 px-1">
+                    <span className="text-xs text-kt-muted">별로였어요</span>
+                    <span className="text-xs text-kt-muted">최고였어요</span>
+                  </div>
+                </div>
+
+                {/* 실제 지원 여부 */}
+                <div>
+                  <p className="text-sm text-gray-300 font-medium mb-3">이 직무에 실제로 지원할 생각이 있으신가요?</p>
+                  <div className="flex flex-col gap-2">
+                    {[
+                      { value: 'yes', label: '네, 지원할 예정이에요' },
+                      { value: 'considering', label: '아직 고민 중이에요' },
+                      { value: 'no', label: '아니요, 다른 직무를 볼게요' },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => setApplied(value as 'yes' | 'no' | 'considering')}
+                        className={`text-left px-4 py-3 rounded-xl text-sm border transition-all ${
+                          applied === value
+                            ? 'border-kt-red bg-kt-red/10 text-white'
+                            : 'border-kt-border bg-kt-bg text-gray-400 hover:border-gray-500'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 도움이 됐던 부분 */}
+                <div>
+                  <p className="text-sm text-gray-300 font-medium mb-3">어떤 부분이 도움이 됐나요? <span className="text-kt-muted font-normal">(복수 선택)</span></p>
+                  <div className="flex flex-wrap gap-2">
+                    {['직무 이해', '자기소개서 팁', '면접 준비', '연봉/처우', '사내 문화', '커리어 패스'].map((aspect) => (
+                      <button
+                        key={aspect}
+                        onClick={() => toggleAspect(aspect)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all ${
+                          helpfulAspects.includes(aspect)
+                            ? 'border-kt-red bg-kt-red/10 text-kt-red'
+                            : 'border-kt-border bg-kt-bg text-gray-400 hover:border-gray-500'
+                        }`}
+                      >
+                        {aspect}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 자유 의견 */}
+                <div>
+                  <p className="text-sm text-gray-300 font-medium mb-2">추가로 하고 싶은 말이 있나요? <span className="text-kt-muted font-normal">(선택)</span></p>
+                  <textarea
+                    value={freeText}
+                    onChange={(e) => setFreeText(e.target.value)}
+                    placeholder="자유롭게 남겨주세요"
+                    rows={3}
+                    className="w-full resize-none rounded-xl border border-kt-border bg-kt-bg text-white placeholder-gray-600 px-4 py-3 text-sm focus:outline-none focus:border-kt-red transition-colors"
+                  />
+                </div>
+
+                {/* 버튼 */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowSurvey(false)}
+                    className="flex-1 py-3 rounded-xl border border-kt-border text-gray-400 text-sm hover:border-gray-500 transition-colors"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleSurveySubmit}
+                    disabled={satisfaction === 0 || applied === null}
+                    className={`flex-2 flex-grow py-3 rounded-xl text-sm font-bold transition-all ${
+                      satisfaction > 0 && applied !== null
+                        ? 'bg-kt-red text-white hover:bg-red-700'
+                        : 'bg-kt-bg border border-kt-border text-gray-600 cursor-not-allowed'
+                    }`}
+                  >
+                    제출하기
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   )
 }
