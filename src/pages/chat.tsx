@@ -3,18 +3,26 @@ import Head from 'next/head'
 import { useState, useRef, useEffect } from 'react'
 import { JOBS } from '@/data/jobs'
 import { MENTORS } from '@/data/mentors'
+import { INTENT_OPTIONS, Intent } from '@/types/intent'
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
 }
 
+const INTENT_GREETINGS: Record<Intent, (mentorName: string, jobTitle: string) => string> = {
+  jd: (name, job) => `안녕하세요! ${name}이에요.\n${job} 채용공고에 대해 궁금한 거 뭐든 물어보세요!`,
+  story: (name, job) => `안녕! 나 ${name}이야.\n${job} 직무 실무 경험이나 커리어 얘기 편하게 물어봐!`,
+  resume: (name, job) => `안녕하세요! ${name}이에요.\n${job} 지원 자소서, KT 합격 선배들 예시 기반으로 같이 다듬어볼게요!`,
+}
+
 export default function ChatPage() {
   const router = useRouter()
-  const { jobId, mentorId } = router.query
+  const { jobId, mentorId, intent } = router.query
 
   const job = JOBS.find((j) => j.id === jobId)
   const mentor = MENTORS.find((m) => m.id === mentorId)
+  const intentOption = INTENT_OPTIONS.find((i) => i.id === intent)
 
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
@@ -25,17 +33,12 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
 
-  // 멘토 첫 인사
   useEffect(() => {
-    if (mentor && job) {
-      setMessages([
-        {
-          role: 'assistant',
-          content: `안녕하세요! 저는 ${mentor.name}이에요 😊\n${job.title} [${job.type}] 채용에 대해 궁금한 거 뭐든 물어보세요!`,
-        },
-      ])
+    if (mentor && job && intent) {
+      const greeting = INTENT_GREETINGS[intent as Intent]?.(mentor.name, job.title)
+      if (greeting) setMessages([{ role: 'assistant', content: greeting }])
     }
-  }, [mentor?.id, job?.id])
+  }, [mentor?.id, job?.id, intent])
 
   const handleSend = async () => {
     const text = input.trim()
@@ -58,7 +61,7 @@ export default function ChatPage() {
     }
   }
 
-  if (!job || !mentor) {
+  if (!job || !mentor || !intentOption) {
     return (
       <div className="min-h-screen bg-kt-gray flex items-center justify-center">
         <p className="text-gray-400">잘못된 접근입니다.</p>
@@ -83,7 +86,6 @@ export default function ChatPage() {
               ←
             </button>
 
-            {/* 멘토 정보 */}
             <div className="flex items-center gap-3 flex-1">
               <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-xl">
                 {mentor.emoji}
@@ -94,9 +96,9 @@ export default function ChatPage() {
               </div>
             </div>
 
-            {/* 채용공고 배지 */}
-            <span className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">
-              {job.title} [{job.type}]
+            {/* 질문 유형 배지 */}
+            <span className="text-xs bg-red-50 text-kt-red border border-red-100 px-3 py-1 rounded-full font-medium">
+              {intentOption.emoji} {intentOption.label}
             </span>
           </div>
         </header>
@@ -109,13 +111,11 @@ export default function ChatPage() {
                 key={i}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} gap-3`}
               >
-                {/* 멘토 아바타 */}
                 {msg.role === 'assistant' && (
                   <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
                     {mentor.emoji}
                   </div>
                 )}
-
                 <div
                   className={`max-w-[75%] px-4 py-3 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed ${
                     msg.role === 'user'
@@ -128,7 +128,6 @@ export default function ChatPage() {
               </div>
             ))}
 
-            {/* 로딩 */}
             {loading && (
               <div className="flex justify-start gap-3">
                 <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-base flex-shrink-0 mt-1">
@@ -153,7 +152,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="궁금한 거 물어보세요 (Enter로 전송)"
+              placeholder={`${intentOption.label}에 대해 물어보세요 (Enter로 전송)`}
               rows={1}
               className="flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm focus:outline-none focus:border-kt-red transition-colors max-h-32"
               style={{ overflowY: 'auto' }}
